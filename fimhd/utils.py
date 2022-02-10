@@ -25,3 +25,6 @@ def acurl(x):
 
 def get_distribution_parameters():
     return {"partition": True, "overlap_type": (DistributedMeshOverlapType.VERTEX, 2)}
+
+def eps(x):
+    return sym(grad(x))
