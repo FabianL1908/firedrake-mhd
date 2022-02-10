@@ -7,14 +7,17 @@ class LidDrivenCavityStandardProblem(StandardMHDProblem):
 
     def base_mesh(self, distribution_parameters):
         if self.args.dim == 2:
-            base = UnitSquareMesh(self.args.baseN, self.args.baseN, distribution_parameters=
-                                  distribution_parameters)
+            base = UnitSquareMesh(self.args.baseN, self.args.baseN, diagonal="crossed",
+                                  distribution_parameters=distribution_parameters)
+            base.coordinates.dat.data[:, 0] -= 0.5
+            base.coordinates.dat.data[:, 1] -= 0.5
         elif self.args.dim == 3:
             pass
 
         return base
 
     def bcs(self, Z):
+        mesh = Z.mesh()
         if self.args.dim == 2:
             u_ex = Constant((1, 0), domain=mesh)
             B_ex = Constant((0, 1), domain=mesh)
@@ -41,7 +44,7 @@ class LidDrivenCavityStandardProblem(StandardMHDProblem):
 if __name__ == "__main__":
 
     parser = get_default_parser()
-    args, _ = parser.known_arguments()
+    args, _ = parser.parse_known_args()
     problem = LidDrivenCavityStandardProblem(args)
     solver = StandardMHDSolver(args, problem)
 

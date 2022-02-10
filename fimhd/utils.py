@@ -1,4 +1,6 @@
 from firedrake import *
+import numpy
+from pyop2.datatypes import IntType
 
 def scross(x, y):
     return x[0]*y[1] - x[1]*y[0]
@@ -28,3 +30,42 @@ def get_distribution_parameters():
 
 def eps(x):
     return sym(grad(x))
+
+def message(msg, mesh):
+    if mesh.comm.rank == 0:
+        warning(msg)
+
+class PressureFixBC(DirichletBC):
+    def __init__(self, V, val, subdomain, method="topological"):
+        super().__init__(V, val, subdomain, method)
+        sec = V.dm.getDefaultSection()
+        dm = V.mesh().topology_dm
+
+        coordsSection = dm.getCoordinateSection()
+        dim = dm.getCoordinateDim()
+        coordsVec = dm.getCoordinatesLocal()
+
+        (vStart, vEnd) = dm.getDepthStratum(0)
+        indices = []
+        for pt in range(vStart, vEnd):
+            x = dm.getVecClosure(coordsSection, coordsVec, pt).reshape(-1, dim).mean(axis=0)
+            if x.dot(x) == 0.0:  # fix [0, 0] in original mesh coordinates (bottom left corner)
+                if dm.getLabelValue("pyop2_ghost", pt) == -1:
+                    indices = [pt]
+                break
+
+        nodes = []
+        for i in indices:
+            if sec.getDof(i) > 0:
+                nodes.append(sec.getOffset(i))
+
+        if V.mesh().comm.rank == 0:
+            nodes = [0]
+        else:
+            nodes = []
+        self.nodes = numpy.asarray(nodes, dtype=IntType)
+
+        if len(self.nodes) > 0:
+            print("Fixing nodes %s" % self.nodes)
+        import sys
+        sys.stdout.flush()

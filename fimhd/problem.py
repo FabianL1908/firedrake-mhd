@@ -1,10 +1,12 @@
 from firedrake import *
-from utils import get_distribution_parameters, eps, scross, scurl, vcross, vcurl
+from fimhd.utils import get_distribution_parameters, eps, scross, scurl, vcross, vcurl
+from alfi import *
 import ufl.algorithms
 
 class MHDProblem(object):
 
     def __init__(self, args):
+        self.args = args
         self.dim = args.dim
         self.k = args.k
         self.nref = args.nref
@@ -12,6 +14,7 @@ class MHDProblem(object):
         self.mw_discr = args.mw_discr
         self.mhd_type = args.mhd_type
         self.hierarchy = args.hierarchy
+        self.variant = self.get_variant()
         self.distribution_parameters = get_distribution_parameters()
         self.mesh = self.mesh_hierarchy()[-1]
         self.Z = self.function_space()
@@ -33,7 +36,7 @@ class MHDProblem(object):
             for p in range(*dm.getHeightStratum(1)):
                 dm.setLabelValue("prolongation", p, i+2)
 
-        baseMesh = self.base_mesh(distribution_parameters)
+        baseMesh = self.base_mesh(self.distribution_parameters)
         if self.hierarchy == "bary":
             mh = alfi.BaryMeshHierarchy(baseMesh, self.nref, callbacks=(before, after))
         elif self.hierarchy == "uniform":
@@ -53,13 +56,12 @@ class MHDProblem(object):
         return variant
     
     def get_up_space(self):
-        variant = self.get_variant()
         if self.ns_discr == "hdivbdm":
-            Vel = FiniteElement("N2div", self.mesh.ufl_cell(), self.k, variant=variant)
+            Vel = FiniteElement("N2div", self.mesh.ufl_cell(), self.k, variant=self.variant)
             V = FunctionSpace(self.mesh, Vel)
-            Q = FunctionSpace(self.mesh, "DG", k-1)
+            Q = FunctionSpace(self.mesh, "DG", self.k-1)
         elif self.ns_discr == "hdivrt":
-            Vel = FiniteElement("N1div", self.mesh.ufl_cell(), self.k, variant=variant)
+            Vel = FiniteElement("N1div", self.mesh.ufl_cell(), self.k, variant=self.variant)
             V = FunctionSpace(mesh, Vel)
             Q = FunctionSpace(mesh, "DG", self.k-1)
         elif self.ns_discr == "sv":
@@ -71,17 +73,16 @@ class MHDProblem(object):
 
         return V, Q
 
-    def get_E_space():
+    def get_E_space(self):
         if self.dim == 2:
             R = FunctionSpace(self.mesh, "CG", self.k)  # E
         elif self.dim == 3:
-            variant = self.get_variant()
-            Rel = FiniteElement("N1curl", self.mesh.ufl_cell(), self.k, variant=variant)
+            Rel = FiniteElement("N1curl", self.mesh.ufl_cell(), self.k, variant=self.variant)
             R = FunctionSpace(self.mesh, Rel)  # E
-        return E
+        return R
 
-    def get_B_space():
-        Wel = FiniteElement("N1div", self.mesh.ufl_cell(), self.k, variant=variant)
+    def get_B_space(self):
+        Wel = FiniteElement("N1div", self.mesh.ufl_cell(), self.k, variant=self.variant)
         W = FunctionSpace(self.mesh, Wel)
         return W
 
@@ -142,8 +143,8 @@ class MHDProblem(object):
 
 class StandardMHDProblem(MHDProblem):
 
-    def __init__(self):
-        super.__init__()
+    def __init__(self, args):
+        super().__init__(args)
         self.mhd_type == "standard"
         Re = Constant(1.0)
         self.Re = Re
@@ -203,7 +204,7 @@ class StandardMHDProblem(MHDProblem):
         elif self.ns_discr in ["sv", "th"]:
             F += self.advect * inner(dot(grad(u), u), v) * dx
 
-        rhs = self.rhs()
+        rhs = self.rhs(self.Z)
         if rhs is not None:
            f1, f2, f3, f4 = rhs
            F -= inner(f1, v) * dx + inner(f3, Ff) * dx + inner(f2, C) * dx
@@ -261,15 +262,16 @@ class StandardMHDProblem(MHDProblem):
         return J
 
     def transfer_ops(self):
+        V, Q = self.get_up_space()
         qtransfer = NullTransfer()
         Etransfer = NullTransfer()
-        vtransfer = SVSchoeberlTransfer((1/Re, gamma), 2, hierarchy)
+        vtransfer = SVSchoeberlTransfer((1/self.Re, self.gamma), 2, self.hierarchy)
         dgtransfer = DGInjection()
 
         transfers = {
                      Q.ufl_element(): (prolong, restrict, qtransfer.inject),
-                     VectorElement("DG", mesh.ufl_cell(), args.k): (dgtransfer.prolong, restrict, dgtransfer.inject),
-                     VectorElement("DG", mesh.ufl_cell(), args.k-1): (dgtransfer.prolong, restrict, dgtransfer.inject),
+                     VectorElement("DG", self.mesh.ufl_cell(), self.k): (dgtransfer.prolong, restrict, dgtransfer.inject),
+                     VectorElement("DG", self.mesh.ufl_cell(), self.k-1): (dgtransfer.prolong, restrict, dgtransfer.inject),
                     }
         if self.hierarchy == "bary":
             transfers[V.ufl_element()] = (vtransfer.prolong, vtransfer.restrict, inject)
