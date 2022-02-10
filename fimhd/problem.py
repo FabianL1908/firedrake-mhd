@@ -7,6 +7,7 @@ class MHDProblem(object):
     def __init__(self, args):
         self.dim = args.dim
         self.k = args.k
+        self.nref = args.nref
         self.ns_discr = args.ns_discr
         self.mw_discr = args.mw_discr
         self.mhd_type = args.mhd_type
@@ -20,7 +21,7 @@ class MHDProblem(object):
         self.z = Function(self.Z)
         self.z_test = TestFunction(self.Z)
 
-    def base_mesh(self):
+    def base_mesh(self, distribution_parameters):
         raise NotImplementedError
 
     def mesh_hierarchy(self):
@@ -28,16 +29,15 @@ class MHDProblem(object):
             for p in range(*dm.getHeightStratum(1)):
                 dm.setLabelValue("prolongation", p, i+1)
 
-
         def after(dm, i):
             for p in range(*dm.getHeightStratum(1)):
                 dm.setLabelValue("prolongation", p, i+2)
 
         baseMesh = self.base_mesh(distribution_parameters)
         if self.hierarchy == "bary":
-            mh = alfi.BaryMeshHierarchy(base, nref, callbacks=(before, after))
+            mh = alfi.BaryMeshHierarchy(baseMesh, self.nref, callbacks=(before, after))
         elif self.hierarchy == "uniform":
-            mh = MeshHierarchy(base, nref, reorder=True, callbacks=(before, after),
+            mh = MeshHierarchy(baseMesh, self.nref, reorder=True, callbacks=(before, after),
                                distribution_parameters=self.distribution_parameters)
         else:
             raise NotImplementedError("Only know bary and uniform for the hierarchy.")
@@ -86,7 +86,8 @@ class MHDProblem(object):
         return W
 
     def get_ns_dg_form(self, u, p, v, q):
-        _, bcs_ids_apply, bcs_ids_dont_apply, u_ex = self.bcs(self.Z)
+        _, bcs_ids_apply, bcs_ids_dont_apply, sol_ex = self.bcs(self.Z)
+        u_ex = sol_ex[0]
         h = CellVolume(self.mesh)/FacetArea(self.mesh)
         n = FacetNormal(self.mesh)
         if self.dim == 2:
@@ -134,6 +135,10 @@ class MHDProblem(object):
 
     def jacobian(self):
         raise NotImplementedError
+
+    def transfer_ops(self):
+        raise NotImplementedError
+
 
 class StandardMHDProblem(MHDProblem):
 
@@ -254,7 +259,22 @@ class StandardMHDProblem(MHDProblem):
                         )
                 J = J_picard
         return J
-        
+
+    def transfer_ops(self):
+        qtransfer = NullTransfer()
+        Etransfer = NullTransfer()
+        vtransfer = SVSchoeberlTransfer((1/Re, gamma), 2, hierarchy)
+        dgtransfer = DGInjection()
+
+        transfers = {
+                     Q.ufl_element(): (prolong, restrict, qtransfer.inject),
+                     VectorElement("DG", mesh.ufl_cell(), args.k): (dgtransfer.prolong, restrict, dgtransfer.inject),
+                     VectorElement("DG", mesh.ufl_cell(), args.k-1): (dgtransfer.prolong, restrict, dgtransfer.inject),
+                    }
+        if self.hierarchy == "bary":
+            transfers[V.ufl_element()] = (vtransfer.prolong, vtransfer.restrict, inject)
+        return transfers
+
         
 class HallMHDProblem(MHDProblem):
 
