@@ -18,11 +18,12 @@ def get_default_parser():
     parser.add_argument("--mw-discr", choices=["BE", "Br"], required=True)
     parser.add_argument("--mhd-type", choices=["standard", "hall", "boussinesq"], required=True)
 #    parser.add_argument("--solver-type", choices=list(solvers.keys()), default="lu")
-    parser.add_argument("--solver-type", choices=["lu"], default="lu")
+    parser.add_argument("--solver-type", type=str, default="lu")
     parser.add_argument("--linearisation", choices=["picard", "mdp", "newton"], required=True)
     parser.add_argument("--stab", default=False, action="store_true")
     parser.add_argument("--checkpoint", default=False, action="store_true")
     parser.add_argument("--output", default=False, action="store_true")
+    parser.add_argument("--tinyasm", default=False, action="store_true")
 
     return parser
 

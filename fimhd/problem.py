@@ -38,13 +38,20 @@ class MHDProblem(object):
 
         baseMesh = self.base_mesh(self.distribution_parameters)
         if self.hierarchy == "bary":
-            mh = alfi.BaryMeshHierarchy(baseMesh, self.nref, callbacks=(before, after))
+            mh = BaryMeshHierarchy(baseMesh, self.nref, callbacks=(before, after))
         elif self.hierarchy == "uniform":
             mh = MeshHierarchy(baseMesh, self.nref, reorder=True, callbacks=(before, after),
                                distribution_parameters=self.distribution_parameters)
         else:
             raise NotImplementedError("Only know bary and uniform for the hierarchy.")
 
+        if hasattr(self, "factor_update_coords_in_mh"):
+            fac_coords_update = self.factor_update_coords_in_mh()
+            for m in mh:
+                m.coordinates.dat.data[:, 0] -= fac_coords_update
+                m.coordinates.dat.data[:, 1] -= fac_coords_update
+            if self.dim == 3:
+                m.coordinates.dat.data[:, 2] -= fac_coords_update
         return mh
 
     def get_variant(self):
@@ -66,7 +73,7 @@ class MHDProblem(object):
             Q = FunctionSpace(mesh, "DG", self.k-1)
         elif self.ns_discr == "sv":
             V = VectorFunctionSpace(self.mesh, "CG", self.k)
-            Q = FunctionSpace(mesh, "DG", self.k-1)
+            Q = FunctionSpace(self.mesh, "DG", self.k-1)
         elif self.ns_discr == "th":
             V = VectorFunctionSpace(self.mesh, "CG", self.k)
             Q = FunctionSpace(self.mesh, "CG", self.k-1)
@@ -268,11 +275,19 @@ class StandardMHDProblem(MHDProblem):
         vtransfer = SVSchoeberlTransfer((1/self.Re, self.gamma), 2, self.hierarchy)
         dgtransfer = DGInjection()
 
-        transfers = {
-                     Q.ufl_element(): (prolong, restrict, qtransfer.inject),
-                     VectorElement("DG", self.mesh.ufl_cell(), self.k): (dgtransfer.prolong, restrict, dgtransfer.inject),
-                     VectorElement("DG", self.mesh.ufl_cell(), self.k-1): (dgtransfer.prolong, restrict, dgtransfer.inject),
-                    }
+        if self.dim == 2:
+            R = self.get_E_space()
+            transfers = {
+                          Q.ufl_element(): (prolong, restrict, qtransfer.inject),
+                          R.ufl_element(): (prolong, restrict, Etransfer.inject),
+                          VectorElement("DG", self.mesh.ufl_cell(), self.k): (dgtransfer.prolong, restrict, dgtransfer.inject),
+                         }
+        elif self.dim == 3:
+            transfers = {
+                        Q.ufl_element(): (prolong, restrict, qtransfer.inject),
+                        VectorElement("DG", self.mesh.ufl_cell(), self.k): (dgtransfer.prolong, restrict, dgtransfer.inject),
+                        VectorElement("DG", self.mesh.ufl_cell(), self.k-1): (dgtransfer.prolong, restrict, dgtransfer.inject),
+                       }
         if self.hierarchy == "bary":
             transfers[V.ufl_element()] = (vtransfer.prolong, vtransfer.restrict, inject)
         return transfers

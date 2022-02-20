@@ -840,6 +840,10 @@ if args.solver_type in ["fs2by2", "fs2by2nslu"]:
 if args.hierarchy == "bary":
     params["snes_linesearch_type"] = "l2"
 
+
+import pprint
+pprint.pprint(params)
+
 # Definition of solver and transfer operators
 solver = NonlinearVariationalSolver(problem, solver_parameters=params, options_prefix="", appctx=appctx)
 qtransfer = NullTransfer()
@@ -860,6 +864,7 @@ if hierarchy == "bary":
 transfermanager = TransferManager(native_transfers=transfers)
 solver.set_transfer_manager(transfermanager)
 
+print(solver._ctx.transfer_manager.native_transfers)
 results = {}
 res = args.Re
 rems = args.Rem

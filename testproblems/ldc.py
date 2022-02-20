@@ -9,12 +9,15 @@ class LidDrivenCavityStandardProblem(StandardMHDProblem):
         if self.args.dim == 2:
             base = UnitSquareMesh(self.args.baseN, self.args.baseN, diagonal="crossed",
                                   distribution_parameters=distribution_parameters)
-            base.coordinates.dat.data[:, 0] -= 0.5
-            base.coordinates.dat.data[:, 1] -= 0.5
+#            base.coordinates.dat.data[:, 0] -= 0.5
+#            base.coordinates.dat.data[:, 1] -= 0.5
         elif self.args.dim == 3:
             pass
 
         return base
+
+    def factor_update_coords_in_mh(self):
+        return 0.5
 
     def bcs(self, Z):
         mesh = Z.mesh()
