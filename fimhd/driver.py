@@ -26,13 +26,3 @@ def get_default_parser():
     parser.add_argument("--tinyasm", default=False, action="store_true")
 
     return parser
-
-def run_solver(solver, res, rems, ss):
-    for rem in rems:
-        for s in ss:
-            for re in res:
-#                try:
-                    solver.solve(re, rem, s)
-                # If solve fails report 0 as iteration number
-#                except Exception as e:
-#                    message(e, solver.problem.mesh)

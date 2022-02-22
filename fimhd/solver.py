@@ -4,6 +4,7 @@ from mpi4py import MPI
 from fimhd.utils import *
 import petsc4py
 petsc4py.PETSc.Sys.popErrorHandler()
+import os
 
 class MHDSolver(object):
 
@@ -224,7 +225,7 @@ class MHDSolver(object):
         # Main solver with LU solver for Schur complement
         fs2by2slu_dict = {
             "fieldsplit_0": nsfs,
-            "fieldsplit_1": outerschurlu 
+            "fieldsplit_1": outerschurlu
             }
         fs2by2slu = {**outerbase, **fs2by2slu_dict}
 
@@ -234,7 +235,7 @@ class MHDSolver(object):
             "fieldsplit_0_pc_type": "lu",
             "fieldsplit_0_pc_factor_mat_solver_type": "mumps",
             "fieldsplit_0_mat_mumps_icntl_14": ICNTL_14,
-            "fieldsplit_1": outerschurlu 
+            "fieldsplit_1": outerschurlu
             }
         fs2by2lu = {**outerbase, **fs2by2lu_dict}
 
@@ -247,6 +248,12 @@ class MHDSolver(object):
     def configure_solver(self, *args):
         raise NotImplementedError
 
+    def run(self, *args):
+        raise NotImplementedError
+
+    def print_iteration_numbers(self):
+        raise NotImplementedError
+    
 class SchurPCBE(AuxiliaryOperatorPC):
     def form(self, pc, V, U):
         [B, E] = split(U)
@@ -254,18 +261,27 @@ class SchurPCBE(AuxiliaryOperatorPC):
         state = self.get_appctx(pc)['state']
         [u_n, p_n, B_n, E_n] = split(state)
         Rem = self.get_appctx(pc)['Rem']
+        dim = self.get_appctx(pc)['dim']
 
-        A = (
-             + 1*inner(E, Ff) * dx
-             + inner(scross(u_n, B), Ff) * dx
-            - 1/Rem * inner(B, vcurl(Ff)) * dx
-             + inner(vcurl(E), C) * dx
-            + 1/Rem * inner(div(B), div(C)) * dx
-                      )
+        if dim == 2:
+            A = (
+                + inner(E, Ff) * dx
+                + inner(scross(u_n, B), Ff) * dx
+                - 1/Rem * inner(B, vcurl(Ff)) * dx
+                + inner(vcurl(E), C) * dx
+                + 1/Rem * inner(div(B), div(C)) * dx
+                          )
+        elif dim == 3:
+            A = (
+                + inner(E, Ff) * dx
+                + inner(cross(u_n, B), Ff) * dx
+                - 1/Rem * inner(B, curl(Ff)) * dx
+                + inner(curl(E), C) * dx
+                + 1/Rem * inner(div(B), div(C)) * dx
+                          )
 
         bcs = [DirichletBC(V.function_space().sub(0), 0, "on_boundary"),
-               DirichletBC(V.function_space().sub(1), 0, "on_boundary"),
-               ]
+               DirichletBC(V.function_space().sub(1), 0, "on_boundary")]
 
         return (A, bcs)
 
@@ -278,6 +294,7 @@ class StandardMHDSolver(MHDSolver):
         self.S = problem.S
         self.problem = problem
         self.args = args
+        self.pvd_file = File("output/mhd.pvd")
 
 
     def configure_solver(self, nsfs, outerschur, outerschurlu):
@@ -300,7 +317,16 @@ class StandardMHDSolver(MHDSolver):
         self.Rem.assign(rem)
         self.S.assign(s)
 
-        appctx = {"Re": self.Re, "gamma": self.args.gamma, "nu": 1/self.Re, "Rem": self.Rem}
+        # Indices for output depending on Re-S, Re-Rem or S-Rem table
+        if len(self.args.S) == 1 or len(self.args.Rem) == 1:
+            ind1 = re
+            ind2 = s*rem
+        else:
+            ind1 = re*s
+            ind2 = rem
+
+        
+        appctx = {"Re": self.Re, "gamma": self.args.gamma, "nu": 1/self.Re, "Rem": self.Rem, "dim": self.args.dim}
         solver = self.get_solver(appctx)
 
         if self.problem.mesh.comm.rank == 0:
@@ -344,7 +370,72 @@ class StandardMHDSolver(MHDSolver):
             print("||div(u)||_L^2 = %s" % norm_div_u, flush=True)
             print("||div(B)||_L^2 = %s" % norm_div_B, flush=True)
 
+        if self.args.output:
+            self.pvd_file.writ(u, p, B, E, time=float(re*rem*s))
 
+        # Write iteration numbers to file
+        if self.problem.mesh.comm.rank == 0:
+            dir = 'results/results'+str(self.args.linearisation)+str(self.args.mhd_type)+'/'
+            if not os.path.exists(dir):
+                os.mkdir(dir)
+            f = open(dir+str(float(ind1))+str(float(ind2))+'.txt', 'w+')
+            f.write("({0:2.0f}){1:4.1f}".format(float(nonlinear_its), float(linear_its/nonlinear_its)))
+            f.close()
+
+
+    def run(self):
+        for rem in self.args.Rem:
+            for s in self.args.S:
+                for re in self.args.Re:
+    #                try:
+                        self.solve(re, rem, s)
+                    # If solve fails report 0 as iteration number
+    #                except Exception as e:
+    #                    message(e, solver.problem.mesh)
+            
+
+    def print_iteration_numbers(self):
+        Res = self.args.Re
+        Rems = self.args.Rem
+        S = self.args.S
+        if len(self.args.S)!=1 and len(self.args.Rems)!=1:
+            S = self.args.Re
+            Res = self.args.S
+
+        for linearisation in ["picard", "newton"]:
+            res_list = []
+            for rem in Rems:
+                for s in S:
+                    for re in Res:
+                        try:
+                            with open('results/results'+str(linearisation)+str(self.args.mhd_type)+'/'+str(float(re))+str(float(rem*s))+'.txt','r') as f:
+                                    res_list.append(f.read())
+                        except:
+                            res_list.append("    -   ")
+            f = open('iteration_numbers'+'.txt','a')
+            print(linearisation)
+            if len(S)!=1:
+                print("  S\Re   ", end = '')
+                iterRems = iter(int(Rems[0])*S)
+            elif len(Rems)!=1:
+                if len(self.args.Re)!=1:
+                    print("  Rem\Re   ", end = '')
+                else:
+                    print("  Rem\S   ", end = '')
+                iterRems = iter(Rems*int(S[0]))
+            for re in Res:
+                    print("%8s &" % re, end = ' ')
+            for i, result in enumerate(res_list):
+                    if (i) % len(Res) == 0:
+                       print(" ")
+                       print("%8s &" % next(iterRems) , end = ' ')
+                    print(result + " &" , end = ' ')
+            print(" "); print("")
+            f.close()
+
+
+    
+    
 class HallMHDSolver(MHDSolver):
     pass
 

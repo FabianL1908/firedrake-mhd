@@ -399,15 +399,15 @@ outerschurlu = {
 # Main solver
 fs2by2 = {
     "snes_type": "newtonls",
-    "snes_max_it": 25,
+    "snes_max_it": 10,
     "snes_linesearch_type": "basic",
     "snes_linesearch_maxstep": 1.0,
     "snes_rtol": 1.0e-10,
-    "snes_atol": 1.0e-6,
+    "snes_atol": 4.0e-6,
     "snes_monitor": None,
     "ksp_type": "fgmres",
-    "ksp_max_it": 75,
-    "ksp_atol": 1.0e-7,
+    "ksp_max_it": 35,
+    "ksp_atol": 3.0e-6,
     "ksp_rtol": 1.0e-7,
     "ksp_monitor_true_residual": None,
     "ksp_converged_reason": None,
@@ -422,21 +422,22 @@ fs2by2 = {
 # Main solver with LU solver for (u,p)-block
 fs2by2nslu = {
     "snes_type": "newtonls",
-    "snes_max_it": 30,
+    "snes_max_it": 10,
     "snes_linesearch_type": "l2",
     "snes_linesearch_maxstep": 1.0,
     "snes_rtol": 1.0e-10,
-    "snes_atol": 1.0e-7,
+    "snes_atol": 4.0e-6,
     "snes_monitor": None,
     "ksp_type": "fgmres",
-    "ksp_max_it": 50,
-    "ksp_atol": 1.0e-8,
-    "ksp_rtol": 1.0e-9,
+    "ksp_max_it": 35,
+    "ksp_atol": 3.0e-6,
+    "ksp_rtol": 1.0e-7,
     "ksp_monitor_true_residual": None,
     "ksp_converged_reason": None,
     "mat_type": "aij",
     "pc_type": "fieldsplit",
     "pc_fieldsplit_type": "schur",
+    "pc_fieldsplit_schur_factorization_type": "upper",
     "pc_fieldsplit_0_fields": "0,1",
     "pc_fieldsplit_1_fields": "2,3",
     "fieldsplit_0_ksp_type": "preonly",
@@ -448,21 +449,22 @@ fs2by2nslu = {
 # Main solver with LU solver for Schur complement
 fs2by2slu = {
     "snes_type": "newtonls",
-    "snes_max_it": 30,
-    "snes_linesearch_type": "l2",
+    "snes_max_it": 10,
+    "snes_linesearch_type": "basic",
     "snes_linesearch_maxstep": 1.0,
-    "snes_rtol": 1.0e-15,
-    "snes_atol": 1.0e-7,
+    "snes_rtol": 1.0e-10,
+    "snes_atol": 4.0e-6,
     "snes_monitor": None,
     "ksp_type": "fgmres",
-    "ksp_max_it": 40,
-    "ksp_atol": 1.0e-7,
+    "ksp_max_it": 35,
+    "ksp_atol": 3.0e-6,
     "ksp_rtol": 1.0e-7,
     "ksp_monitor_true_residual": None,
     "ksp_converged_reason": None,
     "mat_type": "aij",
     "pc_type": "fieldsplit",
     "pc_fieldsplit_type": "schur",
+    "pc_fieldsplit_schur_factorization_type": "upper",
     "pc_fieldsplit_0_fields": "0,1",
     "pc_fieldsplit_1_fields": "2,3",
     "fieldsplit_1": outerschurlu,
@@ -472,21 +474,22 @@ fs2by2slu = {
 # Can be used to determine how well the outer Schur complement is approximated by the different linerizations
 fs2by2lu = {
     "snes_type": "newtonls",
-    "snes_max_it": 30,
-    "snes_linesearch_type": "l2",
+    "snes_max_it": 10,
+    "snes_linesearch_type": "basic",
     "snes_linesearch_maxstep": 1.0,
     "snes_rtol": 1.0e-10,
-    "snes_atol": 1.0e-6,
+    "snes_atol": 4.0e-6,
     "snes_monitor": None,
     "ksp_type": "fgmres",
-    "ksp_max_it": 50,
-    "ksp_atol": 1.0e-7,
+    "ksp_max_it": 35,
+    "ksp_atol": 3.0e-6,
     "ksp_rtol": 1.0e-7,
     "ksp_monitor_true_residual": None,
     "ksp_converged_reason": None,
     "mat_type": "aij",
     "pc_type": "fieldsplit",
     "pc_fieldsplit_type": "schur",
+    "pc_fieldsplit_schur_factorization_type": "upper",
     "pc_fieldsplit_0_fields": "0,1",
     "pc_fieldsplit_1_fields": "2,3",
     "fieldsplit_0_ksp_type": "preonly",
@@ -581,13 +584,12 @@ else:
     raise NotImplementedError("Only know bary, uniformbary and uniform for the hierarchy.")
 
 # Change mesh from [0,1]^3 to [-0.5,0.5]^3
-if testproblem != "3dgenerator":
-    for m in mh:
-        m.coordinates.dat.data[:, 0] -= 0.5
-        m.coordinates.dat.data[:, 1] -= 0.5
-        m.coordinates.dat.data[:, 2] -= 0.5
+#if testproblem != "3dgenerator":
+#    for m in mh:
+#        m.coordinates.dat.data[:, 0] -= 0.5
+#        m.coordinates.dat.data[:, 1] -= 0.5
+#        m.coordinates.dat.data[:, 2] -= 0.5
 mesh = mh[-1]
-
 area = assemble(Constant(1, domain=mh[0])*dx)
 
 
@@ -818,6 +820,9 @@ if args.solver_type in ["fs2by2", "fs2by2mlu"]:
 if args.hierarchy == "bary":
     params["snes_linesearch_type"] = "l2"
 
+import pprint
+pprint.pprint(params)
+    
 # Definition of solver and transfer operators
 solver = NonlinearVariationalSolver(problem, solver_parameters=params, options_prefix="", appctx=appctx)
 qtransfer = NullTransfer()

@@ -24,6 +24,11 @@ class MHDProblem(object):
         self.z = Function(self.Z)
         self.z_test = TestFunction(self.Z)
 
+        if self.ns_discr == "sv" and self.hierarchy != "bary":
+            raise ValueError("Scott Vogelius is only stable on barycentric refined grids. "
+                             "Use hierarchy=bary instead")
+
+
     def base_mesh(self, distribution_parameters):
         raise NotImplementedError
 
@@ -77,7 +82,6 @@ class MHDProblem(object):
         elif self.ns_discr == "th":
             V = VectorFunctionSpace(self.mesh, "CG", self.k)
             Q = FunctionSpace(self.mesh, "CG", self.k-1)
-
         return V, Q
 
     def get_E_space(self):
